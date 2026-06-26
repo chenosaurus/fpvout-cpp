@@ -23,7 +23,7 @@ int main() {
     if ((err = libusb_init(NULL)) < 0)
         return die("initialize fail ", err);
     cerr << "opening device" << endl;
-    libusb_device_handle *dh = libusb_open_device_with_vid_pid(NULL, 0x2ca3, 0x1f);
+    libusb_device_handle *dh = libusb_open_device_with_vid_pid(NULL, 0x2ca3, 0x20);
     if (!dh) return die("open device fail ", 1);
 
     cerr << "claiming interface" << endl;
