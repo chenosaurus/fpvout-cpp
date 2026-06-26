@@ -1,4 +1,3 @@
-#include <iostream>
 #include <vector>
 #include <cstdint>
 #include <cstdio>
@@ -10,16 +9,41 @@
 using namespace std;
 
 // ---- Device config -------------------------------------------------------
-// DJI Goggles 3 in PC mode enumerate as 2ca3:0020 with several identical
-// vendor-specific "BULK Interface" descriptors. Interface 4 (EP 0x04 OUT /
-// 0x85 IN) is the one observed to accept writes. If you get no data, try the
-// other vendor interfaces: 3 (0x03/0x84), 5 (0x05/0x86), 6 (0x06/0x87),
-// 7 (0x07/0x88).
+// Two USB personalities for DJI Goggles 3:
+//
+//   * Mobile / MFI mode (FPV_MOBILE_MODE=1, the default): the goggles enumerate
+//     as 2ca3:1002 with a single muxed interface "com.dji.logiclink"
+//     (interface 1, alt setting 1, EP 0x02 OUT / 0x82 IN). This mode carries
+//     the video stream and is the only one proven to work. Reaching it requires
+//     hardware that spoofs an iPhone USB role switch (e.g. a Cynthion running
+//     samuelsadok/dji_protocol's emulate_iphone.py).
+//
+//   * PC mode (FPV_MOBILE_MODE=0): the goggles enumerate as 2ca3:0020 with
+//     vendor "BULK Interface" descriptors. Only interface 4 (EP 0x04 OUT /
+//     0x85 IN) accepts writes, but it only returns a DUML status heartbeat and
+//     never the video port. Kept for diagnostics only -- it does NOT produce
+//     video. Build with: cmake -S . -B build -DMOBILE_MODE=OFF
+//
+// Override the mode at build time via the CMake option MOBILE_MODE.
+#ifndef FPV_MOBILE_MODE
+#define FPV_MOBILE_MODE 1
+#endif
+
+#if FPV_MOBILE_MODE
+static const uint16_t VID         = 0x2ca3;
+static const uint16_t PID         = 0x1002;
+static const int      INTERFACE   = 1;
+static const int      ALT_SETTING = 1;
+static const uint8_t  EP_OUT      = 0x02;
+static const uint8_t  EP_IN       = 0x82;
+#else
 static const uint16_t VID         = 0x2ca3;
 static const uint16_t PID         = 0x0020;
 static const int      INTERFACE   = 4;
+static const int      ALT_SETTING = -1; // no alternate setting needed
 static const uint8_t  EP_OUT      = 0x04;
 static const uint8_t  EP_IN       = 0x85;
+#endif
 
 // Video stream encapsulation port (little-endian 0x574A == 22346).
 static const uint8_t  VIDEO_PORT_LO = 0x4A;
@@ -71,6 +95,12 @@ int main() {
     fprintf(stderr, "claiming interface %d\n", INTERFACE);
     if ((err = libusb_claim_interface(dh, INTERFACE)) < 0)
         return fail("claim interface fail", err);
+
+    if (ALT_SETTING >= 0) {
+        fprintf(stderr, "selecting alt setting %d\n", ALT_SETTING);
+        if ((err = libusb_set_interface_alt_setting(dh, INTERFACE, ALT_SETTING)) < 0)
+            return fail("set alt setting fail", err);
+    }
 
     fprintf(stderr, "sending start commands to EP 0x%02x\n", EP_OUT);
     send_start(dh);
